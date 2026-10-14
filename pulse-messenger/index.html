@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pulse Messenger</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        :root {
+            --bg-main: #0e1621;
+            --bg-sidebar: #17212b;
+            --bg-input: #242f3d;
+            --text-main: #f5f5f5;
+            --text-secondary: #8a9ba8;
+            --accent: #3390ec;
+            --msg-out: #2b5278;
+            --msg-in: #182533;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Roboto, sans-serif; }
+        body { background: var(--bg-main); color: var(--text-main); height: 100vh; display: flex; justify-content: center; align-items: center; }
+
+        .auth-screen { text-align: center; width: 340px; }
+        .auth-screen h1 { margin-bottom: 10px; display: flex; align-items: center; justify-content: center; gap: 10px; font-size: 32px; }
+        .auth-screen .subtitle { color: var(--text-secondary); margin-bottom: 25px; }
+        .auth-screen input { width: 100%; padding: 14px; margin: 8px 0; background: var(--bg-input); border: 1px solid transparent; border-radius: 8px; color: white; font-size: 16px; transition: border 0.2s; }
+        .auth-screen input:focus { outline: none; border-color: var(--accent); }
+        .auth-screen input::placeholder { color: var(--text-secondary); }
+        
+        .btn-primary { width: 100%; padding: 14px; background: var(--accent); border: none; border-radius: 8px; color: white; font-size: 16px; font-weight: bold; cursor: pointer; margin-top: 10px; transition: opacity 0.2s; }
+        .btn-primary:hover { opacity: 0.9; }
+        
+        .btn-secondary { width: 100%; padding: 14px; background: transparent; border: 1px solid var(--accent); border-radius: 8px; color: var(--accent); font-size: 16px; font-weight: bold; cursor: pointer; margin-top: 10px; transition: background 0.2s; }
+        .btn-secondary:hover { background: rgba(51, 144, 236, 0.1); }
+        
+        .error { color: #e53935; font-size: 14px; margin-top: 10px; min-height: 20px; }
+        .success { color: #4caf50; }
+
+        .app-container { display: none; width: 100%; height: 100vh; max-width: 1200px; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
+        .sidebar { width: 30%; min-width: 300px; background: var(--bg-sidebar); height: 100%; display: flex; flex-direction: column; border-right: 1px solid #0e1621; }
+        .sidebar-header { padding: 15px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--bg-input); }
+        .sidebar-header h2 { font-size: 20px; color: var(--accent); }
+        .chat-list { flex: 1; overflow-y: auto; }
+        .chat-item { padding: 12px 15px; display: flex; align-items: center; gap: 12px; cursor: pointer; transition: background 0.2s; }
+        .chat-item:hover, .chat-item.active { background: var(--bg-input); }
+        .chat-avatar { width: 45px; height: 45px; background: var(--accent); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 18px; }
+        .chat-info { flex: 1; overflow: hidden; }
+        .chat-name { font-weight: 600; margin-bottom: 4px; }
+        .chat-last-msg { color: var(--text-secondary); font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+        .chat-window { flex: 1; display: flex; flex-direction: column; background: var(--bg-main); }
+        .chat-header { padding: 15px; background: var(--bg-sidebar); border-bottom: 1px solid var(--bg-input); font-weight: 600; }
+        .messages-area { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+        .message { max-width: 70%; padding: 8px 12px; border-radius: 12px; position: relative; word-wrap: break-word; }
+        .message.out { align-self: flex-end; background: var(--msg-out); border-bottom-right-radius: 0; }
+        .message.in { align-self: flex-start; background: var(--msg-in); border-bottom-left-radius: 0; }
+        .message .time { font-size: 11px; color: var(--text-secondary); margin-top: 4px; text-align: right; }
+        
+        .input-area { padding: 15px; background: var(--bg-sidebar); display: flex; gap: 10px; }
+        .input-area input { flex: 1; padding: 12px; background: var(--bg-input); border: none; border-radius: 8px; color: white; font-size: 16px; }
+        .input-area button { padding: 0 20px; background: var(--accent); border: none; border-radius: 8px; color: white; cursor: pointer; font-weight: bold; }
+
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+
+    <!-- ЭКРАН АВТОРИЗАЦИИ -->
+    <div id="authScreen" class="auth-screen">
+        <h1>
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#3390ec" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+            Pulse
+        </h1>
+        <p class="subtitle">Мгновенные сообщения</p>
+        
+        <input type="email" id="email" placeholder="Email">
+        <input type="text" id="username" placeholder="Имя пользователя (только для регистрации)" class="hidden">
+        <input type="password" id="password" placeholder="Пароль">
+        
+        <button id="loginBtn" class="btn-primary">Войти</button>
+        <button id="regBtn" class="btn-secondary">Зарегистрироваться</button>
+        
+        <div id="authError" class="error"></div>
+    </div>
+
+    <!-- ИНТЕРФЕЙС МЕССЕНДЖЕРА -->
+    <div id="appContainer" class="app-container">
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#3390ec" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+                <h2>Pulse</h2>
+            </div>
+            <div id="chatList" class="chat-list"></div>
+        </div>
+
+        <div class="chat-window">
+            <div class="chat-header" id="chatHeader">Выберите чат</div>
+            <div class="messages-area" id="messagesArea">
+                <p style="color: var(--text-secondary); text-align: center; margin-top: 20px;">Начните общение в Pulse!</p>
+            </div>
+            <div class="input-area">
+                <input type="text" id="msgInput" placeholder="Напишите сообщение...">
+                <button id="sendBtn">➤</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentUser = null;
+        let currentChatId = null;
+        let socket = null;
+        let allUsers = [];
+        let isRegisterMode = false;
+
+        const authScreen = document.getElementById('authScreen');
+        const appContainer = document.getElementById('appContainer');
+        const chatList = document.getElementById('chatList');
+        const chatHeader = document.getElementById('chatHeader');
+        const messagesArea = document.getElementById('messagesArea');
+        const msgInput = document.getElementById('msgInput');
+        const usernameInput = document.getElementById('username');
+        const errEl = document.getElementById('authError');
+
+        // Переключение между входом и регистрацией
+        document.getElementById('loginBtn').onclick = () => {
+            isRegisterMode = false;
+            usernameInput.classList.add('hidden');
+            auth('login');
+        };
+        
+        document.getElementById('regBtn').onclick = () => {
+            isRegisterMode = true;
+            usernameInput.classList.remove('hidden');
+            auth('register');
+        };
+
+        async function auth(action) {
+            const email = document.getElementById('email').value.trim();
+            const password = document.getElementById('password').value;
+            const username = usernameInput.value.trim();
+            
+            errEl.textContent = '';
+            errEl.className = 'error';
+
+            if (!email || !password) {
+                errEl.textContent = 'Заполните email и пароль';
+                return;
+            }
+            if (action === 'register' && !username) {
+                errEl.textContent = 'Введите имя пользователя';
+                return;
+            }
+
+            try {
+                const res = await fetch(`http://localhost:3000/api/${action}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password, username })
+                });
+                const data = await res.json();
+                
+                if (!res.ok) throw new Error(data.error);
+
+                if (action === 'login') {
+                    currentUser = data.user;
+                    localStorage.setItem('pulse_token', data.token);
+                    initApp();
+                } else {
+                    errEl.className = 'error success';
+                    errEl.textContent = '✓ Регистрация успешна! Теперь войдите.';
+                }
+            } catch (e) {
+                errEl.textContent = e.message;
+            }
+        }
+
+        function initApp() {
+            authScreen.classList.add('hidden');
+            appContainer.classList.remove('hidden');
+            appContainer.style.display = 'flex';
+
+            const token = localStorage.getItem('pulse_token');
+            socket = io('http://localhost:3000', { auth: { token } });
+
+            socket.on('connect', () => {
+                socket.emit('get:users');
+                socket.emit('get:chats');
+            });
+
+            socket.on('users:list', (users) => {
+                allUsers = users.filter(u => u.id !== currentUser.id);
+                socket.emit('get:chats');
+            });
+
+            socket.on('chats:list', (chats) => {
+                renderChatList(chats);
+            });
+
+            socket.on('refresh:chats', () => {
+                socket.emit('get:chats');
+            });
+
+            socket.on('chat:opened', (data) => {
+                currentChatId = data.chatId;
+                chatHeader.textContent = data.companionName;
+                messagesArea.innerHTML = '';
+                data.history.forEach(msg => renderMessage(msg));
+                scrollToBottom();
+            });
+
+            socket.on('new:message', (msg) => {
+                if (msg.chatId === currentChatId) {
+                    renderMessage(msg);
+                    scrollToBottom();
+                }
+                socket.emit('get:chats');
+            });
+        }
+
+        function renderChatList(activeChats = []) {
+            chatList.innerHTML = '';
+            
+            activeChats.forEach(chat => {
+                const item = createChatItem(chat.companion, chat.lastMessage, chat.companionId, false);
+                chatList.appendChild(item);
+            });
+
+            const activeCompanionIds = activeChats.map(c => c.companionId);
+            allUsers.forEach(user => {
+                if (!activeCompanionIds.includes(user.id)) {
+                    const item = createChatItem(user.username, 'Напишите первое сообщение', user.id, true);
+                    chatList.appendChild(item);
+                }
+            });
+        }
+
+        function createChatItem(name, lastMsg, id, isNew) {
+            const div = document.createElement('div');
+            div.className = 'chat-item';
+            if (id === currentChatId && !isNew) div.classList.add('active');
+            
+            div.innerHTML = `
+                <div class="chat-avatar">${name[0].toUpperCase()}</div>
+                <div class="chat-info">
+                    <div class="chat-name">${name}</div>
+                    <div class="chat-last-msg">${lastMsg}</div>
+                </div>
+            `;
+            
+            div.onclick = () => {
+                socket.emit('open:chat', id);
+            };
+            return div;
+        }
+
+        function renderMessage(msg) {
+            const isOut = msg.senderId === currentUser.id;
+            const div = document.createElement('div');
+            div.className = `message ${isOut ? 'out' : 'in'}`;
+            const time = new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+            div.innerHTML = `
+                <div class="text">${msg.text}</div>
+                <div class="time">${time}</div>
+            `;
+            messagesArea.appendChild(div);
+        }
+
+        function scrollToBottom() {
+            messagesArea.scrollTop = messagesArea.scrollHeight;
+        }
+
+        document.getElementById('sendBtn').onclick = sendMessage;
+        msgInput.onkeypress = (e) => { if (e.key === 'Enter') sendMessage(); };
+
+        function sendMessage() {
+            const text = msgInput.value.trim();
+            if (!text || !currentChatId) return;
+            socket.emit('send:message', { chatId: currentChatId, text });
+            msgInput.value = '';
+        }
+
+        // Авто-вход
+        window.onload = () => {
+            const token = localStorage.getItem('pulse_token');
+            if (token) {
+                try {
+                    const payload = JSON.parse(atob(token.split('.')[1]));
+                    currentUser = { id: payload.id, email: payload.email, username: payload.username };
+                    initApp();
+                } catch(e) {
+                    localStorage.removeItem('pulse_token');
+                }
+            }
+        };
+    </script>
+</body>
+</html>
