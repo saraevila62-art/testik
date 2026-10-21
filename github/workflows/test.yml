@@ -1,0 +1,53 @@
+name: Run Tests (Exclude KT2)
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Install dependencies
+      run: |
+        cd pulse-messenger
+        npm install
+      # Если package.json в корне, уберите "cd pulse-messenger"
+
+    - name: Run tests (excluding KT2)
+      run: |
+        cd Tests
+        
+        echo "🔍 Поиск тестовых файлов (исключая KT2)..."
+        
+        # Находим все .js файлы, исключая KT2
+        TEST_FILES=$(find . -type f -name "*.js" | grep -vi "KT2")
+        
+        if [ -z "$TEST_FILES" ]; then
+          echo "⚠️ Тестовые файлы не найдены."
+          exit 0
+        fi
+
+        FAILED=0
+        for file in $TEST_FILES; do
+          echo "🚀 Запуск: $file"
+          node "$file" || FAILED=1
+        done
+
+        if [ $FAILED -eq 1 ]; then
+          echo "❌ Некоторые тесты провалились!"
+          exit 1
+        else
+          echo "✅ Все тесты (кроме КТ2) успешно пройдены!"
+        fi
