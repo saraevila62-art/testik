@@ -1,0 +1,53 @@
+name: Run Tests (Exclude KT2)
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Install dependencies
+      run: npm install
+
+    - name: Run all tests (excluding KT2)
+      run: |
+        echo "🔍 Запуск тестов из папки Tests (КТ2 исключён)..."
+        
+        FAILED=0
+        
+        for file in Tests/test*.js; do
+          # Пропускаем файлы с KT2 в имени
+          if echo "$file" | grep -qi "KT2"; then
+            echo "⏭️  Пропущен: $file"
+            continue
+          fi
+          
+          echo "🚀 Запуск: $file"
+          if node "$file"; then
+            echo "✅ Успешно: $file"
+          else
+            echo "❌ Провален: $file"
+            FAILED=1
+          fi
+          echo "---"
+        done
+
+        if [ $FAILED -eq 1 ]; then
+          echo " Некоторые тесты провалились!"
+          exit 1
+        else
+          echo "🎉 Все тесты пройдены!"
+        fi
